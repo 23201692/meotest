@@ -1,99 +1,136 @@
 import json
 import os
 import random
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
 from typing import List, Optional
+from datetime import datetime
 
-DATA_FILE = "library_data.json"
+DATA_FILE = "tasks_history.json"
+
+# Предопределённые задачи по категориям
+PREDEFINED_TASKS = {
+    "учёба": [
+        "Прочитать статью по программированию",
+        "Решить 5 задач на Codewars",
+        "Посмотреть лекцию на YouTube",
+        "Повторить конспект лекции",
+        "Сделать домашнее задание",
+        "Прочитать главу учебника",
+        "Пройти тест по пройденной теме"
+    ],
+    "спорт": [
+        "Сделать зарядку 15 минут",
+        "Пробежать 3 км",
+        "Сделать 50 приседаний",
+        "Позаниматься йогой 20 минут",
+        "Сделать растяжку",
+        "Отжаться 30 раз",
+        "Покачать пресс 10 минут"
+    ],
+    "работа": [
+        "Ответить на письма",
+        "Подготовить отчёт",
+        "Созвониться с командой",
+        "Проверить дедлайны",
+        "Обновить резюме",
+        "Изучить новую технологию",
+        "Написать документацию"
+    ]
+}
 
 
 @dataclass
-class Book:
-    title: str
-    author: str
-    year: int
-    isbn: str
-    read: bool = False
+class Task:
+    """Класс, представляющий сгенерированную задачу."""
+    task: str
+    category: str
+    timestamp: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
     def validate(self) -> Optional[str]:
-        if not self.title or not self.title.strip():
-            return "Название книги не может быть пустым"
-        if not self.author or not self.author.strip():
-            return "Автор не может быть пустым"
-        if not isinstance(self.year, int):
-            return "Год должен быть целым числом"
-        if self.year < 1000 or self.year > 2026:
-            return "Год должен быть от 1000 до 2026"
-        if not self.isbn or not self.isbn.strip():
-            return "ISBN не может быть пустым"
-        clean = self.isbn.replace('-', '').replace(' ', '')
-        if len(clean) < 10 or len(clean) > 17:
-            return "ISBN должен содержать от 10 до 17 символов"
-        for c in clean:
-            if not c.isdigit() and c != 'X':
-                return "ISBN содержит недопустимые символы"
+        """Проверяет, что задача не пустая."""
+        if not self.task or not self.task.strip():
+            return "Задача не может быть пустой"
         return None
 
 
-class Library:
-    def __init__(self):
-        self.books: List[Book] = []
+class TaskGenerator:
+    """Управляет генерацией задач, историей и фильтрацией."""
 
-    def add_book(self, book: Book) -> str:
-        error = book.validate()
+    def __init__(self):
+        self.history: List[Task] = []
+
+    def add_custom_task(self, task_text: str, category: str) -> str:
+        """Добавляет пользовательскую задачу в историю. Возвращает 'ok' или ошибку."""
+        task = Task(task=task_text.strip(), category=category)
+        error = task.validate()
         if error:
             return error
-        self.books.append(book)
+        self.history.append(task)
         return "ok"
 
-    def delete_book(self, index: int) -> bool:
-        if 0 <= index < len(self.books):
-            del self.books[index]
-            return True
-        return False
+    def generate_random_task(self, category: str = "все") -> Optional[Task]:
+        """
+        Генерирует случайную задачу.
+        Если категория "все" — выбирает из всех категорий.
+        """
+        if category == "все":
+            # Собираем все задачи
+            all_tasks = []
+            for tasks in PREDEFINED_TASKS.values():
+                all_tasks.extend(tasks)
+            if not all_tasks:
+                return None
+            task_text = random.choice(all_tasks)
+            # Определяем категорию выбранной задачи
+            for cat, tasks in PREDEFINED_TASKS.items():
+                if task_text in tasks:
+                    task = Task(task=task_text, category=cat)
+                    self.history.append(task)
+                    return task
+        elif category in PREDEFINED_TASKS:
+            tasks = PREDEFINED_TASKS[category]
+            if tasks:
+                task_text = random.choice(tasks)
+                task = Task(task=task_text, category=category)
+                self.history.append(task)
+                return task
+        return None
 
-    def toggle_read(self, index: int) -> bool:
-        if 0 <= index < len(self.books):
-            self.books[index].read = not self.books[index].read
-            return True
-        return False
+    def get_filtered_history(self, category_filter: str = "все", search_text: str = "") -> List[Task]:
+        """Фильтрует историю по категории и тексту поиска."""
+        result = self.history
 
-    def get_filtered_books(self, search_term: str = "", read_filter: Optional[bool] = None) -> List[Book]:
-        result = self.books
-        if search_term:
-            term = search_term.lower()
-            result = [b for b in result if term in b.title.lower() or term in b.isbn]
-        if read_filter is not None:
-            result = [b for b in result if b.read == read_filter]
+        if category_filter and category_filter != "все":
+            result = [t for t in result if t.category == category_filter]
+
+        if search_text:
+            term = search_text.lower()
+            result = [t for t in result if term in t.task.lower()]
+
         return result
 
+    def clear_history(self) -> None:
+        """Очищает историю задач."""
+        self.history = []
+
     def save_to_file(self, filename: str = DATA_FILE) -> None:
-        data = [asdict(b) for b in self.books]
+        """Сохраняет историю в JSON-файл."""
+        data = [asdict(t) for t in self.history]
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
     def load_from_file(self, filename: str = DATA_FILE) -> None:
+        """Загружает историю из JSON-файла."""
         if not os.path.exists(filename):
-            self.books = []
+            self.history = []
             return
         try:
             with open(filename, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            self.books = [Book(**item) for item in data]
+            self.history = [Task(**item) for item in data]
         except (json.JSONDecodeError, KeyError, TypeError):
-            self.books = []
+            self.history = []
 
-    def seed_random_books(self, count: int = 5) -> None:
-        titles = ["Война и мир", "1984", "Мастер и Маргарита", "Три товарища",
-                  "Преступление и наказание", "Великий Гэтсби", "Хоббит"]
-        authors = ["Толстой", "Оруэлл", "Булгаков", "Ремарк", "Достоевский",
-                   "Фицджеральд", "Толкин"]
-        for _ in range(count):
-            book = Book(
-                title=random.choice(titles),
-                author=random.choice(authors),
-                year=random.randint(1800, 2025),
-                isbn=f"978-{random.randint(1000000000, 9999999999)}",
-                read=random.choice([True, False])
-            )
-            self.add_book(book)
+    def get_categories(self) -> List[str]:
+        """Возвращает список всех категорий."""
+        return ["все"] + list(PREDEFINED_TASKS.keys())

@@ -1,100 +1,116 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from models import Library, Book
+from models import TaskGenerator
 
 
-class LibraryApp:
+class TaskGeneratorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("meotest - Менеджер библиотеки")
-        self.root.geometry("900x600")
+        self.root.title("Random Task Generator")
+        self.root.geometry("800x600")
 
-        self.library = Library()
-        self.library.load_from_file()
+        self.generator = TaskGenerator()
+        self.generator.load_from_file()
 
+        # Переменные для фильтров
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", self.on_filter_change)
 
-        self.read_filter_var = tk.StringVar(value="Все")
-        self.read_filter_var.trace_add("write", self.on_filter_change)
+        self.category_filter_var = tk.StringVar(value="все")
+        self.category_filter_var.trace_add("write", self.on_filter_change)
 
         self.setup_ui()
         self.refresh_list()
 
     def setup_ui(self):
+        # Левый фрейм (управление)
         left_frame = ttk.Frame(self.root, padding="10")
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH)
 
+        # Правый фрейм (список)
         right_frame = ttk.Frame(self.root, padding="10")
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # --- Форма добавления ---
-        add_frame = ttk.LabelFrame(left_frame, text="Добавить книгу", padding="10")
+        # --- Генерация задачи ---
+        gen_frame = ttk.LabelFrame(left_frame, text="Сгенерировать задачу", padding="10")
+        gen_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(gen_frame, text="Категория:").pack(anchor=tk.W)
+        self.gen_category = ttk.Combobox(
+            gen_frame,
+            values=self.generator.get_categories(),
+            state="readonly",
+            width=27
+        )
+        self.gen_category.set("все")
+        self.gen_category.pack(fill=tk.X, pady=2)
+
+        ttk.Button(gen_frame, text="🎲 Сгенерировать задачу", command=self.generate_task).pack(fill=tk.X, pady=10)
+
+        # --- Последняя сгенерированная ---
+        last_frame = ttk.LabelFrame(left_frame, text="Последняя задача", padding="10")
+        last_frame.pack(fill=tk.X, pady=5)
+
+        self.last_task_label = ttk.Label(last_frame, text="Нажмите кнопку...", wraplength=250, font=("Arial", 11))
+        self.last_task_label.pack(fill=tk.X)
+
+        # --- Добавление своей задачи ---
+        add_frame = ttk.LabelFrame(left_frame, text="Добавить свою задачу", padding="10")
         add_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(add_frame, text="Название:").grid(row=0, column=0, sticky=tk.W)
-        self.title_entry = ttk.Entry(add_frame, width=30)
-        self.title_entry.grid(row=0, column=1, pady=2)
+        ttk.Label(add_frame, text="Текст задачи:").pack(anchor=tk.W)
+        self.task_entry = ttk.Entry(add_frame, width=30)
+        self.task_entry.pack(fill=tk.X, pady=2)
 
-        ttk.Label(add_frame, text="Автор:").grid(row=1, column=0, sticky=tk.W)
-        self.author_entry = ttk.Entry(add_frame, width=30)
-        self.author_entry.grid(row=1, column=1, pady=2)
-
-        ttk.Label(add_frame, text="Год:").grid(row=2, column=0, sticky=tk.W)
-        self.year_entry = ttk.Entry(add_frame, width=30)
-        self.year_entry.grid(row=2, column=1, pady=2)
-
-        ttk.Label(add_frame, text="ISBN:").grid(row=3, column=0, sticky=tk.W)
-        self.isbn_entry = ttk.Entry(add_frame, width=30)
-        self.isbn_entry.grid(row=3, column=1, pady=2)
-
-        ttk.Button(add_frame, text="Добавить книгу", command=self.add_book).grid(
-            row=4, column=0, columnspan=2, pady=10
+        ttk.Label(add_frame, text="Категория:").pack(anchor=tk.W)
+        self.add_category = ttk.Combobox(
+            add_frame,
+            values=list(self.generator.get_categories())[1:],  # без "все"
+            state="readonly",
+            width=27
         )
-        ttk.Button(add_frame, text="Добавить 10 случайных книг", command=self.seed_random).grid(
-            row=5, column=0, columnspan=2
-        )
+        self.add_category.set("учёба")
+        self.add_category.pack(fill=tk.X, pady=2)
+
+        ttk.Button(add_frame, text="➕ Добавить задачу", command=self.add_custom_task).pack(fill=tk.X, pady=5)
 
         # --- Фильтры ---
-        filter_frame = ttk.LabelFrame(left_frame, text="Фильтры", padding="10")
+        filter_frame = ttk.LabelFrame(left_frame, text="Фильтры истории", padding="10")
         filter_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(filter_frame, text="Поиск (название/ISBN):").pack(anchor=tk.W)
+        ttk.Label(filter_frame, text="Поиск:").pack(anchor=tk.W)
         ttk.Entry(filter_frame, textvariable=self.search_var, width=30).pack(fill=tk.X, pady=2)
 
-        ttk.Label(filter_frame, text="Статус чтения:").pack(anchor=tk.W)
+        ttk.Label(filter_frame, text="Категория:").pack(anchor=tk.W)
         ttk.Combobox(
             filter_frame,
-            textvariable=self.read_filter_var,
-            values=["Все", "Прочитано", "Не прочитано"],
+            textvariable=self.category_filter_var,
+            values=self.generator.get_categories(),
             state="readonly",
             width=27
         ).pack(fill=tk.X, pady=2)
 
-        # --- Кнопки сохранения/загрузки ---
-        io_frame = ttk.Frame(left_frame)
-        io_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=10)
-        ttk.Button(io_frame, text="Сохранить в JSON", command=self.save_data).pack(side=tk.LEFT, padx=5)
-        ttk.Button(io_frame, text="Загрузить из JSON", command=self.load_data).pack(side=tk.LEFT, padx=5)
+        # --- Кнопки сохранения/очистки ---
+        btn_frame = ttk.Frame(left_frame)
+        btn_frame.pack(fill=tk.X, pady=5)
+        ttk.Button(btn_frame, text="💾 Сохранить", command=self.save_data).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        ttk.Button(btn_frame, text="📂 Загрузить", command=self.load_data).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
+        ttk.Button(btn_frame, text="🗑 Очистить", command=self.clear_history).pack(side=tk.LEFT, padx=2, expand=True, fill=tk.X)
 
-        # --- Список книг ---
+        # --- Таблица с историей ---
         list_frame = ttk.Frame(right_frame)
         list_frame.pack(fill=tk.BOTH, expand=True)
 
-        columns = ("title", "author", "year", "isbn", "read")
+        columns = ("task", "category", "timestamp")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="browse")
 
-        self.tree.heading("title", text="Название")
-        self.tree.heading("author", text="Автор")
-        self.tree.heading("year", text="Год")
-        self.tree.heading("isbn", text="ISBN")
-        self.tree.heading("read", text="Прочитана")
+        self.tree.heading("task", text="Задача")
+        self.tree.heading("category", text="Категория")
+        self.tree.heading("timestamp", text="Время")
 
-        self.tree.column("title", width=200)
-        self.tree.column("author", width=150)
-        self.tree.column("year", width=60, anchor=tk.CENTER)
-        self.tree.column("isbn", width=150)
-        self.tree.column("read", width=80, anchor=tk.CENTER)
+        self.tree.column("task", width=350)
+        self.tree.column("category", width=100, anchor=tk.CENTER)
+        self.tree.column("timestamp", width=150, anchor=tk.CENTER)
 
         scrollbar = ttk.Scrollbar(list_frame, command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -102,59 +118,33 @@ class LibraryApp:
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # --- Кнопки действий ---
-        action_frame = ttk.Frame(right_frame)
-        action_frame.pack(fill=tk.X, pady=5)
-        ttk.Button(action_frame, text="Переключить статус", command=self.toggle_read).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="Удалить книгу", command=self.delete_book).pack(side=tk.LEFT, padx=5)
+    def generate_task(self):
+        category = self.gen_category.get()
+        task = self.generator.generate_random_task(category)
 
-    def add_book(self):
-        title = self.title_entry.get().strip()
-        author = self.author_entry.get().strip()
-        year_str = self.year_entry.get().strip()
-        isbn = self.isbn_entry.get().strip()
+        if task:
+            self.last_task_label.config(text=f"[{task.category}] {task.task}")
+            self.refresh_list()
+        else:
+            messagebox.showwarning("Ошибка", "Нет задач в выбранной категории")
 
-        try:
-            year = int(year_str)
-        except ValueError:
-            messagebox.showerror("Ошибка", "Год должен быть целым числом!")
+    def add_custom_task(self):
+        task_text = self.task_entry.get()
+        category = self.add_category.get()
+
+        if not category:
+            messagebox.showerror("Ошибка", "Выберите категорию")
             return
 
-        book = Book(title=title, author=author, year=year, isbn=isbn)
-        result = self.library.add_book(book)
+        result = self.generator.add_custom_task(task_text, category)
 
         if result == "ok":
-            self.title_entry.delete(0, tk.END)
-            self.author_entry.delete(0, tk.END)
-            self.year_entry.delete(0, tk.END)
-            self.isbn_entry.delete(0, tk.END)
+            self.task_entry.delete(0, tk.END)
+            self.last_task_label.config(text=f"[{category}] {task_text}")
             self.refresh_list()
-            messagebox.showinfo("Успех", "Книга добавлена!")
+            messagebox.showinfo("Успех", "Задача добавлена!")
         else:
             messagebox.showerror("Ошибка", result)
-
-    def delete_book(self):
-        selected = self.tree.selection()
-        if not selected:
-            messagebox.showwarning("Внимание", "Выберите книгу для удаления")
-            return
-        index = int(selected[0])
-        self.library.delete_book(index)
-        self.refresh_list()
-
-    def toggle_read(self):
-        selected = self.tree.selection()
-        if not selected:
-            messagebox.showwarning("Внимание", "Выберите книгу")
-            return
-        index = int(selected[0])
-        self.library.toggle_read(index)
-        self.refresh_list()
-
-    def seed_random(self):
-        self.library.seed_random_books(10)
-        self.refresh_list()
-        messagebox.showinfo("Готово", "Добавлено 10 случайных книг")
 
     def on_filter_change(self, *args):
         self.refresh_list()
@@ -164,39 +154,34 @@ class LibraryApp:
             self.tree.delete(item)
 
         search = self.search_var.get().strip()
-        read_status = self.read_filter_var.get()
+        category = self.category_filter_var.get()
 
-        read_filter = None
-        if read_status == "Прочитано":
-            read_filter = True
-        elif read_status == "Не прочитано":
-            read_filter = False
+        filtered = self.generator.get_filtered_history(category_filter=category, search_text=search)
 
-        filtered = self.library.get_filtered_books(search_term=search, read_filter=read_filter)
-        index_map = {id(b): i for i, b in enumerate(self.library.books)}
-
-        for book in filtered:
-            idx = index_map[id(book)]
-            read_text = "Да" if book.read else "Нет"
-            self.tree.insert(
-                "", tk.END, iid=str(idx),
-                values=(book.title, book.author, book.year, book.isbn, read_text)
-            )
+        for i, task in enumerate(filtered):
+            self.tree.insert("", tk.END, iid=str(i),
+                           values=(task.task, task.category, task.timestamp))
 
     def save_data(self):
         try:
-            self.library.save_to_file()
-            messagebox.showinfo("Сохранено", "Данные сохранены в library_data.json")
+            self.generator.save_to_file()
+            messagebox.showinfo("Сохранено", "История сохранена в tasks_history.json")
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось сохранить: {e}")
+            messagebox.showerror("Ошибка", str(e))
 
     def load_data(self):
-        self.library.load_from_file()
+        self.generator.load_from_file()
         self.refresh_list()
-        messagebox.showinfo("Загружено", "Данные загружены из library_data.json")
+        messagebox.showinfo("Загружено", "История загружена")
+
+    def clear_history(self):
+        if messagebox.askyesno("Подтверждение", "Удалить всю историю?"):
+            self.generator.clear_history()
+            self.refresh_list()
+            self.last_task_label.config(text="Нажмите кнопку...")
 
 
 def run_gui():
     root = tk.Tk()
-    app = LibraryApp(root)
+    app = TaskGeneratorApp(root)
     root.mainloop()
